@@ -1,16 +1,25 @@
 package com.runanywhere.startup_hackathon20
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,32 +31,42 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Startup_hackathon20Theme {
-                ChatScreen()
+                EmailRewriterScreen()
             }
         }
     }
 }
 
+// Example emails for quick demo
+val EXAMPLE_EMAILS = listOf(
+    "Hi, I need the report by today. This is the third time I'm asking. Please send it ASAP.",
+    "Hey! Would love to catch up over coffee sometime next week if you're free?",
+    "I'm sorry for missing the deadline. I had some personal issues. Can we reschedule?"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
-    val messages by viewModel.messages.collectAsState()
+fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
+    val context = LocalContext.current
+    val selectedTone by viewModel.selectedTone.collectAsState()
+    val rewrittenEmail by viewModel.rewrittenEmail.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val downloadProgress by viewModel.downloadProgress.collectAsState()
     val currentModelId by viewModel.currentModelId.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
 
-    var inputText by remember { mutableStateOf("") }
-    var showModelSelector by remember { mutableStateOf(false) }
+    var emailText by remember { mutableStateOf("") }
+    var showModelSelector by remember { mutableStateOf(true) }
+    val scrollState = rememberScrollState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI Chat") },
+                title = { Text("Email Tone Rewriter") },
                 actions = {
                     TextButton(onClick = { showModelSelector = !showModelSelector }) {
-                        Text("Models")
+                        Text(if (showModelSelector) "Hide Models" else "Show Models")
                     }
                 }
             )
@@ -57,6 +76,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(scrollState)
         ) {
             // Status bar
             Surface(
@@ -91,52 +111,103 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                 )
             }
 
-            // Messages List
-            val listState = rememberLazyListState()
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages) { message ->
-                    MessageBubble(message)
-                }
-            }
-
-            // Auto-scroll to bottom when new messages arrive
-            LaunchedEffect(messages.size) {
-                if (messages.isNotEmpty()) {
-                    listState.animateScrollToItem(messages.size - 1)
-                }
-            }
-
-            // Input Field
-            Row(
+            // Main Content
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                TextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type a message...") },
-                    enabled = !isLoading && currentModelId != null
+                // Example emails section
+                if (emailText.isEmpty() && rewrittenEmail.isEmpty()) {
+                    Text(
+                        text = "Quick Examples",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    ExampleEmailButtons(
+                        examples = EXAMPLE_EMAILS,
+                        onExampleSelected = { emailText = it }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+
+                // Tone Selector
+                Text(
+                    text = "Select Tone",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                ToneSelector(
+                    selectedTone = selectedTone,
+                    onToneSelected = { viewModel.setTone(it) },
+                    enabled = !isLoading
                 )
 
-                Button(
-                    onClick = {
-                        if (inputText.isNotBlank()) {
-                            viewModel.sendMessage(inputText)
-                            inputText = ""
+                // Email Input
+                Text(
+                    text = "Your Email Draft (max 300 characters)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedTextField(
+                    value = emailText,
+                    onValueChange = { 
+                        if (it.length <= 300) {
+                            emailText = it
                         }
                     },
-                    enabled = !isLoading && inputText.isNotBlank() && currentModelId != null
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    placeholder = { Text("Paste or type your email here...") },
+                    supportingText = { Text("${emailText.length}/300") },
+                    enabled = !isLoading && currentModelId != null,
+                    minLines = 4,
+                    maxLines = 8
+                )
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Send")
+                    Button(
+                        onClick = {
+                            viewModel.rewriteEmail(emailText, selectedTone)
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isLoading && emailText.isNotBlank() && currentModelId != null
+                    ) {
+                        Text("Rewrite")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            emailText = ""
+                            viewModel.clearResult()
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isLoading
+                    ) {
+                        Text("Clear")
+                    }
+                }
+
+                // Result Display
+                if (rewrittenEmail.isNotEmpty() || isLoading) {
+                    HorizontalDivider()
+                    
+                    RewriteResultCard(
+                        originalEmail = emailText,
+                        rewrittenEmail = rewrittenEmail,
+                        tone = selectedTone,
+                        isLoading = isLoading,
+                        onCopy = {
+                            copyToClipboard(context, rewrittenEmail)
+                            Toast.makeText(context, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        }
+                    )
                 }
             }
         }
@@ -144,29 +215,144 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
 }
 
 @Composable
-fun MessageBubble(message: ChatMessage) {
-    Card(
+fun ToneSelector(
+    selectedTone: String,
+    onToneSelected: (String) -> Unit,
+    enabled: Boolean = true
+) {
+    val tones = listOf("Professional", "Friendly", "Concise", "Formal")
+    
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (message.isUser)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.secondaryContainer
-        )
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = if (message.isUser) "You" else "AI",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodyMedium
+        tones.forEach { tone ->
+            FilterChip(
+                selected = selectedTone == tone,
+                onClick = { onToneSelected(tone) },
+                label = { Text(tone) },
+                modifier = Modifier.weight(1f),
+                enabled = enabled
             )
         }
     }
+}
+
+@Composable
+fun ExampleEmailButtons(
+    examples: List<String>,
+    onExampleSelected: (String) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        examples.forEachIndexed { index, example ->
+            OutlinedCard(
+                onClick = { onExampleSelected(example) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Example ${index + 1}: ${example.take(60)}...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RewriteResultCard(
+    originalEmail: String,
+    rewrittenEmail: String,
+    tone: String,
+    isLoading: Boolean,
+    onCopy: () -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Original Email
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Original",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = originalEmail,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        // Rewritten Email
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "$tone Tone",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    if (!isLoading && rewrittenEmail.isNotEmpty()) {
+                        TextButton(onClick = onCopy) {
+                            Text(
+                                text = "📋 Copy",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .padding(top = 8.dp)
+                    )
+                    Text(
+                        text = "Generating...",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                } else {
+                    Text(
+                        text = rewrittenEmail,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = ClipData.newPlainText("Rewritten Email", text)
+    clipboard.setPrimaryClip(clip)
 }
 
 @Composable
@@ -283,6 +469,6 @@ fun ModelItem(
 @Composable
 fun DefaultPreview() {
     Startup_hackathon20Theme {
-        ChatScreen()
+        EmailRewriterScreen()
     }
 }

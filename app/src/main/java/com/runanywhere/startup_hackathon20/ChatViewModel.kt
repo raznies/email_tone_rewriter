@@ -9,10 +9,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-// Simple Message Data Class
+// Email Rewrite Data Class
 data class ChatMessage(
     val text: String,
-    val isUser: Boolean
+    val isUser: Boolean,
+    val originalEmail: String? = null,
+    val tone: String? = null,
+    val isRewriteResult: Boolean = false
 )
 
 // ViewModel
@@ -35,6 +38,15 @@ class ChatViewModel : ViewModel() {
 
     private val _statusMessage = MutableStateFlow<String>("Initializing...")
     val statusMessage: StateFlow<String> = _statusMessage
+
+    private val _selectedTone = MutableStateFlow<String>("Professional")
+    val selectedTone: StateFlow<String> = _selectedTone
+
+    private val _originalEmail = MutableStateFlow<String>("")
+    val originalEmail: StateFlow<String> = _originalEmail
+
+    private val _rewrittenEmail = MutableStateFlow<String>("")
+    val rewrittenEmail: StateFlow<String> = _rewrittenEmail
 
     init {
         loadAvailableModels()
@@ -76,7 +88,7 @@ class ChatViewModel : ViewModel() {
                 val success = RunAnywhere.loadModel(modelId)
                 if (success) {
                     _currentModelId.value = modelId
-                    _statusMessage.value = "Model loaded! Ready to chat."
+                    _statusMessage.value = "Model loaded! Ready to rewrite emails."
                 } else {
                     _statusMessage.value = "Failed to load model"
                 }
@@ -86,40 +98,84 @@ class ChatViewModel : ViewModel() {
         }
     }
 
-    fun sendMessage(text: String) {
+    fun rewriteEmail(emailText: String, tone: String) {
         if (_currentModelId.value == null) {
             _statusMessage.value = "Please load a model first"
             return
         }
 
-        // Add user message
-        _messages.value += ChatMessage(text, isUser = true)
+        if (emailText.isBlank()) {
+            _statusMessage.value = "Please enter an email to rewrite"
+            return
+        }
+
+        // Store original email and tone
+        _originalEmail.value = emailText
+        _selectedTone.value = tone
+        _rewrittenEmail.value = ""
+
+        // Build tone-aware prompt
+        val prompt = buildEmailRewritePrompt(emailText, tone)
 
         viewModelScope.launch {
             _isLoading.value = true
+            _statusMessage.value = "Rewriting in $tone tone..."
 
             try {
-                // Generate response with streaming
-                var assistantResponse = ""
-                RunAnywhere.generateStream(text).collect { token ->
-                    assistantResponse += token
-
-                    // Update assistant message in real-time
-                    val currentMessages = _messages.value.toMutableList()
-                    if (currentMessages.lastOrNull()?.isUser == false) {
-                        currentMessages[currentMessages.lastIndex] =
-                            ChatMessage(assistantResponse, isUser = false)
-                    } else {
-                        currentMessages.add(ChatMessage(assistantResponse, isUser = false))
-                    }
-                    _messages.value = currentMessages
+                // Generate rewritten email with streaming
+                var rewrittenText = ""
+                RunAnywhere.generateStream(prompt).collect { token ->
+                    rewrittenText += token
+                    _rewrittenEmail.value = rewrittenText.trim()
                 }
+                _statusMessage.value = "Rewrite complete!"
             } catch (e: Exception) {
-                _messages.value += ChatMessage("Error: ${e.message}", isUser = false)
+                _rewrittenEmail.value = "Error: ${e.message}"
+                _statusMessage.value = "Rewrite failed: ${e.message}"
             }
 
             _isLoading.value = false
         }
+    }
+
+    private fun buildEmailRewritePrompt(email: String, tone: String): String {
+        return when (tone.lowercase()) {
+            "professional" -> """Rewrite this email in a professional and polished tone. Keep the core message but use formal business language:
+
+$email
+
+Rewritten email:"""
+            "friendly" -> """Rewrite this email in a warm and friendly tone. Keep the message casual and approachable:
+
+$email
+
+Rewritten email:"""
+            "concise" -> """Rewrite this email to be brief and to-the-point. Remove unnecessary words while keeping the key information:
+
+$email
+
+Rewritten email:"""
+            "formal" -> """Rewrite this email in a highly formal and respectful tone suitable for senior executives or official correspondence:
+
+$email
+
+Rewritten email:"""
+            else -> """Rewrite this email in a $tone tone:
+
+$email
+
+Rewritten email:"""
+        }
+    }
+
+    fun setTone(tone: String) {
+        _selectedTone.value = tone
+    }
+
+    fun clearResult() {
+        _originalEmail.value = ""
+        _rewrittenEmail.value = ""
+        _statusMessage.value = "Ready to rewrite emails."
     }
 
     fun refreshModels() {
