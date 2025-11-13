@@ -10,12 +10,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,12 +30,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +46,7 @@ import com.runanywhere.startup_hackathon20.ui.theme.Startup_hackathon20Theme
 import com.runanywhere.startup_hackathon20.ui.theme.SurfaceDark
 import com.runanywhere.startup_hackathon20.ui.theme.TrueBlack
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,22 +102,20 @@ fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
 
     // Staggered animation states
     var titleVisible by remember { mutableStateOf(false) }
-    var subtitleVisible by remember { mutableStateOf(false) }
     var toneChipsVisible by remember { mutableStateOf(false) }
     var inputVisible by remember { mutableStateOf(false) }
     var buttonVisible by remember { mutableStateOf(false) }
 
     // Launch staggered animation on composition
+    // Cumulative delays: 50ms → title, 150ms → chips, 300ms → input, 500ms → button
     LaunchedEffect(Unit) {
         delay(50)
         titleVisible = true
         delay(100)
-        subtitleVisible = true
-        delay(150)
         toneChipsVisible = true
-        delay(200)
+        delay(150)
         inputVisible = true
-        delay(250)
+        delay(200)
         buttonVisible = true
     }
 
@@ -123,11 +128,16 @@ fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
 
     // Result Bottom Sheet
     if (showResultSheet && rewrittenEmail.isNotEmpty()) {
+        val sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true
+        )
+
         ModalBottomSheet(
             onDismissRequest = {
                 showResultSheet = false
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             },
+            sheetState = sheetState,
             containerColor = SurfaceDark,
             dragHandle = {
                 Box(
@@ -185,6 +195,7 @@ fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
                         SurfaceDark,
                         TrueBlack
                     ),
+                    center = Offset(500f, 0f),
                     radius = 1500f
                 )
             )
@@ -238,24 +249,12 @@ fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
                         ),
                         color = Color.White
                     )
+                    Text(
+                        text = "On-device AI. Zero tracking.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
                 }
-            }
-
-            // Subtitle with animation
-            AnimatedVisibility(
-                visible = subtitleVisible,
-                enter = fadeIn(
-                    animationSpec = tween(400, easing = FastOutSlowInEasing)
-                ) + slideInVertically(
-                    animationSpec = tween(400, easing = FastOutSlowInEasing),
-                    initialOffsetY = { 20 }
-                )
-            ) {
-                Text(
-                    text = "On-device AI. Zero tracking.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
             }
 
             // Status message
@@ -662,6 +661,7 @@ fun OnboardingFlow(onComplete: () -> Unit) {
                         SurfaceDark,
                         TrueBlack
                     ),
+                    center = Offset(500f, 0f),
                     radius = 1500f
                 )
             )
@@ -669,6 +669,22 @@ fun OnboardingFlow(onComplete: () -> Unit) {
             .navigationBarsPadding()
             .padding(24.dp)
     ) {
+        // Skip button always visible in top-right corner
+        if (currentPage < 1) {
+            TextButton(
+                onClick = {
+                    onComplete()
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                },
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                Text(
+                    "Skip",
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+
         when (currentPage) {
             0 -> OnboardingModelDownload(
                 models = availableModels,
@@ -685,24 +701,10 @@ fun OnboardingFlow(onComplete: () -> Unit) {
                 onNext = {
                     currentPage = 1
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                },
-                onSkip = {
-                    onComplete()
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             )
             1 -> OnboardingTutorial(
-                onNext = {
-                    currentPage = 2
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                },
-                onSkip = {
-                    onComplete()
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                }
-            )
-            2 -> OnboardingComplete(
-                onGetStarted = {
+                onComplete = {
                     onComplete()
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
@@ -718,8 +720,7 @@ fun OnboardingModelDownload(
     downloadProgress: Float?,
     onDownload: (String) -> Unit,
     onLoad: (String) -> Unit,
-    onNext: () -> Unit,
-    onSkip: () -> Unit
+    onNext: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -832,107 +833,115 @@ fun OnboardingModelDownload(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        TextButton(onClick = onSkip) {
-            Text(
-                "Skip",
-                color = Color.White.copy(alpha = 0.6f)
-            )
-        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun OnboardingTutorial(
-    onNext: () -> Unit,
-    onSkip: () -> Unit
+    onComplete: () -> Unit
 ) {
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "Choose Your Tone",
-            style = MaterialTheme.typography.displayLarge.copy(fontSize = 32.sp),
-            color = Color.White
-        )
+        // Pagination dots at top
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 32.dp)
+        ) {
+            repeat(2) { index ->
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            color = if (pagerState.currentPage == index)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                Color.White.copy(alpha = 0.3f),
+                            shape = CircleShape
+                        )
+                )
+            }
+        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // HorizontalPager with 2 tutorial cards
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            when (page) {
+                0 -> TutorialCard(
+                    title = "Choose Your Tone",
+                    description = "Select from Professional, Friendly, Concise, or Formal to match your needs."
+                )
+                1 -> TutorialCard(
+                    title = "Rewrite Instantly",
+                    description = "Your email will be transformed in seconds, ready to copy and send."
+                )
+            }
+        }
 
-        Text(
-            text = "Select from Professional, Friendly, Concise, or Formal to match your needs.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.6f)
-        )
+        Spacer(modifier = Modifier.height(32.dp))
 
-        Spacer(modifier = Modifier.height(48.dp))
-
+        // Next or Get Started button
         Button(
-            onClick = onNext,
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (pagerState.currentPage == 1) {
+                    onComplete()
+                } else {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(1)
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
-                "Next",
+                if (pagerState.currentPage == 1) "Get Started" else "Next",
                 style = MaterialTheme.typography.labelLarge,
                 fontSize = 16.sp
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(onClick = onSkip) {
-            Text(
-                "Skip",
-                color = Color.White.copy(alpha = 0.6f)
             )
         }
     }
 }
 
 @Composable
-fun OnboardingComplete(
-    onGetStarted: () -> Unit
+fun TutorialCard(
+    title: String,
+    description: String
 ) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Rewrite Instantly",
+            text = title,
             style = MaterialTheme.typography.displayLarge.copy(fontSize = 32.sp),
-            color = Color.White
+            color = Color.White,
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Your email will be transformed in seconds, ready to copy and send.",
+            text = description,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.6f)
+            color = Color.White.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center
         )
-
-        Spacer(modifier = Modifier.height(48.dp))
-
-        Button(
-            onClick = onGetStarted,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Text(
-                "Get Started",
-                style = MaterialTheme.typography.labelLarge,
-                fontSize = 16.sp
-            )
-        }
     }
 }
 
