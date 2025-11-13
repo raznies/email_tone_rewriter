@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -55,14 +54,18 @@ class MainActivity : ComponentActivity() {
 
         // Check if onboarding should be shown
         val prefs = getSharedPreferences("email_rewriter_prefs", Context.MODE_PRIVATE)
-        val hasCompletedOnboarding = prefs.getBoolean("onboarding_completed", false)
 
         setContent {
             Startup_hackathon20Theme {
+                var hasCompletedOnboarding by remember { 
+                    mutableStateOf(prefs.getBoolean("onboarding_completed", false)) 
+                }
+
                 if (!hasCompletedOnboarding) {
                     OnboardingFlow(
                         onComplete = {
                             prefs.edit().putBoolean("onboarding_completed", true).apply()
+                            hasCompletedOnboarding = true
                         }
                     )
                 } else {
@@ -421,18 +424,14 @@ fun EmailRewriterScreen(viewModel: ChatViewModel = viewModel()) {
                         }
 
                         // Character counter
-                        AnimatedVisibility(
-                            visible = emailText.isNotEmpty(),
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp),
-                            enter = fadeIn(animationSpec = tween(300)),
-                            exit = fadeOut(animationSpec = tween(300))
-                        ) {
+                        if (emailText.isNotEmpty()) {
                             Text(
                                 text = "${emailText.length}/300",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.5f)
+                                color = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
                             )
                         }
                     }
@@ -626,10 +625,9 @@ fun ResultSheetContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.ContentCopy,
-                    contentDescription = "Copy",
-                    tint = Color.White
+                Text(
+                    "📋",
+                    fontSize = 20.sp
                 )
                 Text(
                     "Copy to Clipboard",
